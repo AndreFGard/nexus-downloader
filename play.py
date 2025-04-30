@@ -3,8 +3,6 @@ from patchright.sync_api import BrowserContext, Page, sync_playwright,ElementHan
 import time # Import time for potential pauses
 import urllib.parse
 import os
-import duckduckgo_search
-Searcher = duckduckgo_search.DDGS().text
 
 from pydantic import BaseModel
 
@@ -82,19 +80,7 @@ def find_mod_page_url(page: Page, mod_name: str, config:Config) -> str:
 
     return popup.url
 
-def __search_modpage_with_ddg_api(mod_name:str, config:Config) -> str:
-    """not working due to ratelimits"""
-    try:
-        results = Searcher(
-            f"Skyrim Special Edition {mod_name} mod site:nexusmods.com" ,
-            backend="lite",
-            max_results=2,
-        )
-        first_result = results[0]["href"]
-        return first_result
-    except Exception as err:
-        print(err)
-        return ""
+
 
 def search_mod_page(page:Page, mod_name:str, config:Config):
     page.goto('https://lite.duckduckgo.com')
@@ -102,11 +88,9 @@ def search_mod_page(page:Page, mod_name:str, config:Config):
     page.locator('input[type="submit"]').click()
     try:
       loc = page.locator('.result-link')
-      loc.first.wait_for(state="attached", timeout=2000)
-      with page.expect_navigation() as navinfo:
-        loc.first.click()
-        url = navinfo.value.url
-      return url or ''
+      loc.first.wait_for(state="attached", timeout=3000)
+      loc.first.click()
+      return page.url or ''
     except Exception as err:
       print(err)
       time.sleep(20)
@@ -130,7 +114,7 @@ def download_mod(mod:str, browser:BrowserContext, config:Config):
             except:
               url = find_mod_page_url(page,mod, config)
 
-            page.goto(url)
+            if url != page.url: page.goto(url)
             mod_page = page
 
 
