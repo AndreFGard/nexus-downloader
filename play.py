@@ -117,8 +117,18 @@ def download_mod(mod:str, browser:BrowserContext, config:Config):
         print(f"\n--- Searching Nexus for: {mod} ---")
 
         try:
-            nexus_link_found = False
-            mod_page = find_mod_page_with_nexus(page, mod,config)
+            try:
+              url = search_mod_page(page, mod, config) or ''
+              if "nexusmods" not in url:
+                print(f"using nexus mods search (ddg was: {url}")
+                raise
+              print("got results from duckduckgo")
+
+            except:
+              url = find_mod_page_url(page,mod, config)
+
+            page.goto(url)
+            mod_page = page
 
             requirements = []
 
