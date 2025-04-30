@@ -72,9 +72,44 @@ def find_mod_page_with_nexus(page: Page, mod_name: str, config:Config):
     page.wait_for_selector('.mods-grid [data-e2eid="mod-tile"] a[data-e2eid="mod-tile-title"]')
 
     mod_page: ElementHandle = page.query_selector('.mods-grid [data-e2eid="mod-tile"] a[data-e2eid="mod-tile-title"]')#type: ignore
-    page_link = mod_page.get_attribute('href')
-    mod_page.click()
-    return page
+    with page.expect_navigation() as popup_info:
+        mod_page.click()
+        popup = popup_info.value
+        print("Moving to modpage")
+
+    return popup.url
+
+def __search_modpage_with_ddg_api(mod_name:str, config:Config) -> str:
+    """not working due to ratelimits"""
+    try:
+        results = Searcher(
+            f"Skyrim Special Edition {mod_name} mod site:nexusmods.com" ,
+            backend="lite",
+            max_results=2,
+        )
+        first_result = results[0]["href"]
+        return first_result
+    except Exception as err:
+        print(err)
+        return ""
+
+def search_mod_page(page:Page, mod_name:str, config:Config):
+    page.goto('https://lite.duckduckgo.com')
+    page.fill('input[name="q"]', f"Skyrim Special Edition {mod_name} mod site:nexusmods.com")
+    page.locator('input[type="submit"]').click()
+    try:
+      loc = page.locator('.result-link')
+      loc.first.wait_for(state="attached", timeout=2000)
+      with page.expect_navigation() as navinfo:
+        loc.first.click()
+        url = navinfo.value.url
+      return url or ''
+    except Exception as err:
+      print(err)
+      time.sleep(20)
+
+
+
 
 def download_mod(mod:str, browser:BrowserContext, config:Config):
         page = browser.new_page()
