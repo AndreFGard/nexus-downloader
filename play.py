@@ -1,11 +1,11 @@
-from patchright.sync_api import Page, sync_playwright, TimeoutError as PlaywrightTimeoutError, BrowserType
+from patchright.sync_api import Page, sync_playwright,ElementHandle, TimeoutError
 import time # Import time for potential pauses
 
 NEXUS_URL="https://www.nexusmods.com/"
 
 
 
-def download_mod_manually(page: Page):
+def navigate_to_download(page: Page):
     """
     Initiates the manual download process for a mod on the Nexus Mod page.
     The page must have a specific Nexus mod page already open before calling this function.
@@ -15,26 +15,76 @@ def download_mod_manually(page: Page):
     Raises:
         TimeoutError: If any of the expected elements don't appear within timeout.
     """
-    
-    download_popup_button = page.locator('#action-manual')
+
+    page.wait_for_selector("#action-manual",timeout=3000)
+    time.sleep(1)
+    download_popup_button:ElementHandle = page.query_selector('#action-manual') #type:ignore
     download_popup_button.click()
     # Wait for the download popup to appear
-    page.wait_for_selector('.mfp-content', timeout=5000)
-    download_button = page.locator('a.btn:has-text("Download")')
-    download_button.click()
-    
+    requirement_popup = page.wait_for_selector('.widget-mod-requirements', timeout=2000)
+    time.sleep(1) #for some reason it's needed
+    requirement_popup =  requirement_popup or page.query_selector('.widget-mod-requirements')
+    if requirement_popup:
+        try:
+            download_button = requirement_popup.query_selector('a.btn')
+
+
+            # raw_reqs: list[ElementHandle] = requirement_popup.query_selector_all("li")
+
+            # reqs = []
+            # for req in raw_reqs:
+            #     try:
+            #         name = req.query_selector('a').query_selector('span').inner_text()
+            #         href = req.query_selector('a').get_attribute('href')
+
+            #         reqs.append(Requirement(name, href, "" ))
+            #     except:
+            #         ...
+            # print(reqs)
+
+            if not download_button:
+                page.keyboard.press("Esc")
+                print('couldnt find the download button! trying to proceed with Esc')
+                raise
+
+            download_button.click()
+        except:
+            ...
+
+    return page
+
+
+def slow_download(page: Page):
     time.sleep(2)  # give some time to see stuff
     # Wait for the slow download page to load and button to be visible
     print("Waiting for slow download button...")
-    page.wait_for_selector('#slowDownloadButton', timeout=10000)
+    page.wait_for_selector('#slowDownloadButton', timeout=5000)
     slow_download_button = page.locator('#slowDownloadButton')
     slow_download_button.click()
     print("Clicked slow download button")
+    return page
+
+import urllib.parse
+def find_mod_page_with_nexus(page: Page, mod_name):
+    """We could use google or duck duck go's api """
+
+    encoded_name = urllib.parse.quote_plus(mod_name)
+    url = f"https://www.nexusmods.com/games/skyrimspecialedition/mods?keyword={encoded_name}&sort=endorsements"
+    page.goto(url)
+
+    print("Waiting for mod search results: " + encoded_name)
+    time.sleep(5)
+    page.wait_for_selector('.mods-grid [data-e2eid="mod-tile"] a[data-e2eid="mod-tile-title"]')
+
+    mod_page: ElementHandle = page.query_selector('.mods-grid [data-e2eid="mod-tile"] a[data-e2eid="mod-tile-title"]')#type: ignore
+    page_link = mod_page.get_attribute('href')
+    mod_page.click()
+    return page
+
 
 
 global mods
 mods = [
-    "Cloaks of Skyrim",
     "Valhalla Combat",
     "SkyUI_5_2_SE",
     "A Mod That Doesn't Exist Hopefully" # Example of a mod that might not be found
@@ -58,85 +108,40 @@ with sync_playwright() as p:
     page = browser.new_page()
 
     for mod in mods:
-        page = browser.new_page()
-        print(f"\n--- Searching Google for: {mod} ---")
-        try:
-            # 1. Go to Google
-            print("Navigating to Google...")
-            page.goto("https://www.google.com/")
+        with page.expect_download() as download_info:
+            page = browser.new_page()
 
-            # 2. Handle potential Google cookie consent (adjust selector if needed)
-            # This tries to click the 'Accept all' button if it appears within 5 seconds
+
+            print(f"\n--- Searching Nexus for: {mod} ---")
+
             try:
-                print("Attempting to accept Google cookies...")
-                page.locator('button:has-text("Accept all")').click(timeout=2000)
-                print("Cookies accepted (if present).")
-            except PlaywrightTimeoutError:
-                print("No cookie consent banner found or already accepted.")
+                nexus_link_found = False
+                mod_page = find_mod_page_with_nexus(page, mod)
+
+                requirements = []
+
+                if not mod_page:
+                    err = f"ERROR: No nexusmods.com link found in search results for '{mod}'."
+                    print(err)
+                    raise
+
+
+                download_page = navigate_to_download(mod_page)
+                slow_download(download_page)
+                print("OK!")
+
+            except TimeoutError as e:
+                print(f"Timeout error during search for '{mod}': {e}")
+
             except Exception as e:
-                 print(f"An unexpected error occurred while handling cookies: {e}") # Catch other errors
+                print(f"""An unexpected error occurred during the search for '{mod}': {e}!
+                    \n\nDownload the mod and or press enter to proceed""")
+                input()
 
-            # 3. Construct and enter the search query
-            search_query = f"{mod} nexus mods skyrim special edition"
-            print(f"Entering search query: '{search_query}'")
+            time.sleep(3) # Wait for 3 seconds
 
-            # Google's search input is often a textarea with name='q'
-            search_input_selector = 'textarea[name="q"]'
-            page.wait_for_selector(search_input_selector)
-            page.fill(search_input_selector, search_query)
-
-            # 4. Submit the search (by pressing Enter)
-            page.press(search_input_selector, 'Enter')
-            print("Search submitted.")
-
-            # 5. Wait for search results to load
-            # Wait for the main search results container to be visible
-            page.wait_for_selector('div#search', timeout=15000) # Increased timeout just in case
-            print("Search results page loaded.")
-
-            # 6. Find the first Nexus Mods link
-            nexus_link_found = False
-            # Get all potential link elements within the main search results area
-            # Note: This selector might need minor adjustments based on Google's layout variations
-            search_result_links = page.locator('div#search a').all()
-
-            print(f"Checking {len(search_result_links)} potential result links...")
-
-            for link_locator in search_result_links:
-                # Get the href attribute of the link
-                href = link_locator.get_attribute('href')
-
-                # Check if href exists and starts with the Nexus Mods domain
-                if href and href.startswith(NEXUS_URL):
-                    print(f"Found Nexus Mods link: {href}")
-                    # 7. Click the link
-                    link_locator.click()
-                    nexus_link_found = True
-                    print(f"Navigated to: {page.url}") # Confirm navigation URL
-                    # Optional: Wait for the new page to start loading
-                    # page.wait_for_load_state('domcontentloaded')
-                    download_mod_manually(page) # Call the download function
-                    break # Exit the loop once the first valid link is found
-
-            if not nexus_link_found:
-                print(f"ERROR: No nexusmods.com link found in search results for '{mod}'.")
-                # Optionally, you might want to take a screenshot here for debugging
-                # page.screenshot(path=f"no_link_found_{mod.replace(' ', '_')}.png")
-
-        except PlaywrightTimeoutError as e:
-             print(f"Timeout error during search for '{mod}': {e}")
-             # Optionally, take a screenshot on timeout
-             # page.screenshot(path=f"timeout_error_{mod.replace(' ', '_')}.png")
-        except Exception as e:
-            print(f"An unexpected error occurred during the search for '{mod}': {e}")
-            # Optionally, take a screenshot on general error
-            # page.screenshot(path=f"general_error_{mod.replace(' ', '_')}.png")
-
-
-        # Optional: Add a short pause between processing each mod
-        # This makes it easier to follow visually when headless=False
-        # and can help prevent hitting rate limits or looking like a bot too quickly.
-        time.sleep(3) # Wait for 3 seconds
+        download = download_info.value
+        download.save_as("./" + download.suggested_filename)
 
     # The browser is automatically closed when exiting the 'with' block
     print("\n--- Script finished. ---")
