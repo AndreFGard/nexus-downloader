@@ -1,4 +1,4 @@
-from patchright.sync_api import Page, sync_playwright,ElementHandle, TimeoutError
+from patchright.sync_api import BrowserContext, BrowserType, Page, sync_playwright,ElementHandle, TimeoutError
 import time # Import time for potential pauses
 import urllib.parse
 import os
@@ -11,6 +11,8 @@ class Config(BaseModel):
     DOWNLOAD_DIRECTORY:str ='./'
     IS_LOGGED_IN:bool =True
     MODS:list[str] =["Valhalla combat"]
+    USER_DATA_DIR:str =f'{os.environ['HOME']}/.config/google-chrome/Default'
+    CHROME_PATH:str ='/bin/google-chrome-stable'
 
 
 def navigate_to_download(page: Page, config:Config):
@@ -74,59 +76,68 @@ def find_mod_page_with_nexus(page: Page, mod_name: str, config:Config):
     mod_page.click()
     return page
 
-def download_mods(config:Config):
+def download_mod(mod:str, browser:BrowserContext, config:Config):
+        page = browser.new_page()
+
+        print(f"\n--- Searching Nexus for: {mod} ---")
+
+        try:
+            nexus_link_found = False
+            mod_page = find_mod_page_with_nexus(page, mod,config)
+
+            requirements = []
+
+            if not mod_page:
+                err = f"ERROR: No nexusmods.com link found in search results for '{mod}'."
+                print(err)
+                raise
+
+
+            download_page = navigate_to_download(mod_page,config)
+            slow_download(download_page,config)
+            print("OK!")
+
+        except TimeoutError as e:
+            print(f"Timeout error during search for '{mod}': {e}")
+
+        except Exception as e:
+            print(f"""An unexpected error occurred during the search for '{mod}': {e}!
+                \n\nDownload the mod and or press enter to proceed""")
+            input()
+
+        time.sleep(3) # Wait for 3 seconds
+
+    
+def start_downloads(config:Config):
+    os.system(f'mkdir -p {config.DOWNLOAD_DIRECTORY}')
+
     with sync_playwright() as p:
-        user_data_dir=f'{os.environ['HOME']}/.config/google-chrome/Default'
-        #browser = p.chromium.connect_over_cdp("http://localhost:9222")
+        
+        user_data_dir=config.USER_DATA_DIR
         browser = p.chromium.launch_persistent_context(
-            executable_path='/bin/google-chrome-stable',
+            executable_path=config.CHROME_PATH,
             user_data_dir=user_data_dir,
             headless=False,  # See what's going on
             args=["--start-maximized --remote-debugging-port=9222"],
             channel="chrome",
             no_viewport=True
         )
-        page = browser.new_page()
+
+        if not config.IS_LOGGED_IN:
+            print("Please log in to Nexus now and press enter to continue.")
+            input()
 
         for mod in config.MODS:
-            
-            page = browser.new_page()
-
-
-            print(f"\n--- Searching Nexus for: {mod} ---")
-
             try:
-                nexus_link_found = False
-                mod_page = find_mod_page_with_nexus(page, mod,config)
-
-                requirements = []
-
-                if not mod_page:
-                    err = f"ERROR: No nexusmods.com link found in search results for '{mod}'."
-                    print(err)
-                    raise
-
-
-                download_page = navigate_to_download(mod_page,config)
-                slow_download(download_page,config)
-                print("OK!")
-
-            except TimeoutError as e:
-                print(f"Timeout error during search for '{mod}': {e}")
-
-            except Exception as e:
-                print(f"""An unexpected error occurred during the search for '{mod}': {e}!
-                    \n\nDownload the mod and or press enter to proceed""")
-                input()
-
-            time.sleep(3) # Wait for 3 seconds
-
-        print("\n--- Script finished. ---")
+                download_mod(mod, browser, config)
+            except:
+                print(f"trying {mod} again...")
+                download_mod(mod, browser, config)
+            print("-"*10+'#'*5+"-"*10+'\n\n')
 
 
 modlist = [
     "Valhalla combat",
-    "Cloaks of Skyrim"
 ]
 config = Config(
     IS_LOGGED_IN=True,
@@ -134,5 +145,4 @@ config = Config(
     DOWNLOAD_DIRECTORY='./downloads',
     )
 
-os.system(f'mkdir -p {config.DOWNLOAD_DIRECTORY}')
-download_mods(config=config)
+start_downloads(config)
