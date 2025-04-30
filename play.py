@@ -1,7 +1,10 @@
-from patchright.sync_api import BrowserContext, BrowserType, Page, sync_playwright,ElementHandle, TimeoutError
+from genericpath import exists
+from patchright.sync_api import BrowserContext, Page, sync_playwright,ElementHandle, TimeoutError
 import time # Import time for potential pauses
 import urllib.parse
 import os
+import duckduckgo_search
+Searcher = duckduckgo_search.DDGS().text
 
 from pydantic import BaseModel
 
@@ -51,17 +54,17 @@ def slow_download(page: Page, config:Config):
     slow_download_button = page.locator('#slowDownloadButton')
 
     with page.expect_download() as download_info:
+        print("Downloading")
         slow_download_button.click()
         download = download_info.value
         download.save_as(config.DOWNLOAD_DIRECTORY + download.suggested_filename,)
-        print(f"Saved: {download.suggested_filename}")
+        print(f"Downloaded successfully: {download.suggested_filename}")
 
-    print("Clicked slow download button")
     return page
 
 
-def find_mod_page_with_nexus(page: Page, mod_name: str, config:Config):
-    """Navigate to the mod's page on nexus. could use a search engine instead of nexus's own unreliable search"""
+def find_mod_page_url(page: Page, mod_name: str, config:Config) -> str:
+    """Return mod page url. could use a search engine instead of nexus's own unreliable search"""
 
     encoded_name = urllib.parse.quote_plus(mod_name)
     url = f"https://www.nexusmods.com/games/skyrimspecialedition/mods?keyword={encoded_name}&sort=endorsements"
@@ -130,7 +133,6 @@ def download_mod(mod:str, browser:BrowserContext, config:Config):
             page.goto(url)
             mod_page = page
 
-            requirements = []
 
             if not mod_page:
                 err = f"ERROR: No nexusmods.com link found in search results for '{mod}'."
@@ -152,7 +154,7 @@ def download_mod(mod:str, browser:BrowserContext, config:Config):
 
         time.sleep(3) # Wait for 3 seconds
 
-    
+
 def start_downloads(config:Config):
     os.system(f'mkdir -p {config.DOWNLOAD_DIRECTORY}')
 
@@ -178,14 +180,13 @@ def start_downloads(config:Config):
             except:
                 print(f"trying {mod} again...")
                 download_mod(mod, browser, config)
-            print("-"*10+'#'*5+"-"*10+'\n\n')
+            print("-"*20+'#'*10+"-"*20+'\n\n')
+
+
 
 with open("modlist.txt", "r") as f:
   modlist = f.readlines()
 
-modlist = [
-    "Valhalla combat",
-]
 config = Config(
     IS_LOGGED_IN=True,
     MODS=modlist,
