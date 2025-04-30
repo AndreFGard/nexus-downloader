@@ -2,55 +2,34 @@ from patchright.sync_api import Page, sync_playwright,ElementHandle, TimeoutErro
 import time # Import time for potential pauses
 
 NEXUS_URL="https://www.nexusmods.com/"
-
+DOWNLOAD_DIRECTORY='./'
 
 
 def navigate_to_download(page: Page):
-    """
-    Initiates the manual download process for a mod on the Nexus Mod page.
-    The page must have a specific Nexus mod page already open before calling this function.
-    The function clicks through the download process including the slow download option.
-    Args:
-        page (Page): The Playwright Page object with an open Nexus mod page.
-    Raises:
-        TimeoutError: If any of the expected elements don't appear within timeout.
-    """
+    # Use Locator instead of query_selector
+    download_popup_button = page.locator('#action-manual')
 
-    page.wait_for_selector("#action-manual",timeout=3000)
-    time.sleep(1)
-    download_popup_button:ElementHandle = page.query_selector('#action-manual') #type:ignore
+
+    download_popup_button.wait_for(state="visible", timeout=3000)
+    time.sleep(1)  # if required by site animation/JS
     download_popup_button.click()
-    # Wait for the download popup to appear
-    requirement_popup = page.wait_for_selector('.widget-mod-requirements', timeout=2000)
-    time.sleep(1) #for some reason it's needed
-    requirement_popup =  requirement_popup or page.query_selector('.widget-mod-requirements')
-    if requirement_popup:
-        try:
-            download_button = requirement_popup.query_selector('a.btn')
 
+    try:
+        requirement_popup = page.locator('.widget-mod-requirements')
+        requirement_popup.wait_for(state="visible", timeout=2000)
+        time.sleep(1)
 
-            # raw_reqs: list[ElementHandle] = requirement_popup.query_selector_all("li")
+        download_button = requirement_popup.locator('a.btn')
+        download_button.wait_for(state="attached", timeout=2000)
 
-            # reqs = []
-            # for req in raw_reqs:
-            #     try:
-            #         name = req.query_selector('a').query_selector('span').inner_text()
-            #         href = req.query_selector('a').get_attribute('href')
+        if not download_button.is_visible():
+            page.keyboard.press("Escape")
+            print('Could not find the download button! Trying to proceed with Esc.')
+            raise Exception("Download button not visible")
 
-            #         reqs.append(Requirement(name, href, "" ))
-            #     except:
-            #         ...
-            # print(reqs)
-
-            if not download_button:
-                page.keyboard.press("Esc")
-                print('couldnt find the download button! trying to proceed with Esc')
-                raise
-
-            download_button.click()
-        except:
-            ...
-
+        download_button.click()
+    except:
+        ...
     return page
 
 
@@ -60,7 +39,10 @@ def slow_download(page: Page):
     print("Waiting for slow download button...")
     page.wait_for_selector('#slowDownloadButton', timeout=5000)
     slow_download_button = page.locator('#slowDownloadButton')
-    slow_download_button.click()
+    with page.expect_download() as download_info:
+        slow_download_button.click()
+        download = download_info.value
+        download.save_as(DOWNLOAD_DIRECTORY + download.suggested_filename)
     print("Clicked slow download button")
     return page
 
@@ -85,6 +67,7 @@ def find_mod_page_with_nexus(page: Page, mod_name):
 
 global mods
 mods = [
+    "CLoaks of skyrim",
     "Valhalla Combat",
     "SkyUI_5_2_SE",
     "A Mod That Doesn't Exist Hopefully" # Example of a mod that might not be found
@@ -108,40 +91,39 @@ with sync_playwright() as p:
     page = browser.new_page()
 
     for mod in mods:
-        with page.expect_download() as download_info:
-            page = browser.new_page()
+        
+        page = browser.new_page()
 
 
-            print(f"\n--- Searching Nexus for: {mod} ---")
+        print(f"\n--- Searching Nexus for: {mod} ---")
 
-            try:
-                nexus_link_found = False
-                mod_page = find_mod_page_with_nexus(page, mod)
+        try:
+            nexus_link_found = False
+            mod_page = find_mod_page_with_nexus(page, mod)
 
-                requirements = []
+            requirements = []
 
-                if not mod_page:
-                    err = f"ERROR: No nexusmods.com link found in search results for '{mod}'."
-                    print(err)
-                    raise
+            if not mod_page:
+                err = f"ERROR: No nexusmods.com link found in search results for '{mod}'."
+                print(err)
+                raise
 
 
-                download_page = navigate_to_download(mod_page)
-                slow_download(download_page)
-                print("OK!")
+            download_page = navigate_to_download(mod_page)
+            slow_download(download_page)
+            print("OK!")
 
-            except TimeoutError as e:
-                print(f"Timeout error during search for '{mod}': {e}")
+        except TimeoutError as e:
+            print(f"Timeout error during search for '{mod}': {e}")
 
-            except Exception as e:
-                print(f"""An unexpected error occurred during the search for '{mod}': {e}!
-                    \n\nDownload the mod and or press enter to proceed""")
-                input()
+        except Exception as e:
+            print(f"""An unexpected error occurred during the search for '{mod}': {e}!
+                \n\nDownload the mod and or press enter to proceed""")
+            input()
 
-            time.sleep(3) # Wait for 3 seconds
+        time.sleep(3) # Wait for 3 seconds
 
-        download = download_info.value
-        download.save_as("./" + download.suggested_filename)
+
 
     # The browser is automatically closed when exiting the 'with' block
     print("\n--- Script finished. ---")
