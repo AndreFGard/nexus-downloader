@@ -180,6 +180,8 @@ def start_downloads(config:Config):
                 download_mod(mod, browser, config)
             print("-"*10+'#'*5+"-"*10+'\n\n')
 
+with open("modlist.txt", "r") as f:
+  modlist = f.readlines()
 
 modlist = [
     "Valhalla combat",
