@@ -1,5 +1,9 @@
-from playwright.sync_api import Page, sync_playwright, TimeoutError as PlaywrightTimeoutError, BrowserType
+from patchright.sync_api import Page, sync_playwright, TimeoutError as PlaywrightTimeoutError, BrowserType
 import time # Import time for potential pauses
+
+NEXUS_URL="https://www.nexusmods.com/"
+
+
 
 def download_mod_manually(page: Page):
     """
@@ -38,8 +42,19 @@ mods = [
 
 # Use a standard launch instead of connect_over_cdp for simplicity
 # Set headless=False to watch the browser execution
+
+import os
 with sync_playwright() as p:
-    browser = p.chromium.connect_over_cdp("http://localhost:9222")
+    user_data_dir=f'{os.environ['HOME']}/.config/google-chrome/Default'
+    #browser = p.chromium.connect_over_cdp("http://localhost:9222")
+    browser = p.chromium.launch_persistent_context(
+        executable_path='/bin/google-chrome-stable',
+        user_data_dir=user_data_dir,
+        headless=False,  # See what's going on
+        args=["--start-maximized --remote-debugging-port=9222"],
+        channel="chrome",
+        no_viewport=True
+    )
     page = browser.new_page()
 
     for mod in mods:
@@ -92,7 +107,7 @@ with sync_playwright() as p:
                 href = link_locator.get_attribute('href')
 
                 # Check if href exists and starts with the Nexus Mods domain
-                if href and href.startswith("https://www.nexusmods.com/"):
+                if href and href.startswith(NEXUS_URL):
                     print(f"Found Nexus Mods link: {href}")
                     # 7. Click the link
                     link_locator.click()
