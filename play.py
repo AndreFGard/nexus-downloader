@@ -112,7 +112,7 @@ def start_downloads(config:Config):
     os.system(f'mkdir -p {config.DOWNLOAD_DIRECTORY}')
 
     with sync_playwright() as p:
-        
+
         user_data_dir=config.USER_DATA_DIR
         browser = p.chromium.launch_persistent_context(
             executable_path=config.CHROME_PATH,
@@ -142,7 +142,7 @@ modlist = [
 config = Config(
     IS_LOGGED_IN=True,
     MODS=modlist,
-    DOWNLOAD_DIRECTORY='./downloads',
+    DOWNLOAD_DIRECTORY='./downloads/',
     )
 
 start_downloads(config)
