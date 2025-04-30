@@ -1,11 +1,19 @@
 from patchright.sync_api import Page, sync_playwright,ElementHandle, TimeoutError
 import time # Import time for potential pauses
+import urllib.parse
+import os
 
-NEXUS_URL="https://www.nexusmods.com/"
-DOWNLOAD_DIRECTORY='./'
+from pydantic import BaseModel
+
+#todo use  configdict to read from .env or a config file
+class Config(BaseModel):
+    NEXUS_URL:str= "https://www.nexusmods.com/"
+    DOWNLOAD_DIRECTORY:str ='./'
+    IS_LOGGED_IN:bool =True
+    MODS:list[str] =["Valhalla combat"]
 
 
-def navigate_to_download(page: Page):
+def navigate_to_download(page: Page, config:Config):
     # Use Locator instead of query_selector
     download_popup_button = page.locator('#action-manual')
 
@@ -33,22 +41,25 @@ def navigate_to_download(page: Page):
     return page
 
 
-def slow_download(page: Page):
+def slow_download(page: Page, config:Config):
     time.sleep(2)  # give some time to see stuff
     # Wait for the slow download page to load and button to be visible
     print("Waiting for slow download button...")
     page.wait_for_selector('#slowDownloadButton', timeout=5000)
     slow_download_button = page.locator('#slowDownloadButton')
+
     with page.expect_download() as download_info:
         slow_download_button.click()
         download = download_info.value
-        download.save_as(DOWNLOAD_DIRECTORY + download.suggested_filename)
+        download.save_as(config.DOWNLOAD_DIRECTORY + download.suggested_filename,)
+        print(f"Saved: {download.suggested_filename}")
+
     print("Clicked slow download button")
     return page
 
-import urllib.parse
-def find_mod_page_with_nexus(page: Page, mod_name):
-    """We could use google or duck duck go's api """
+
+def find_mod_page_with_nexus(page: Page, mod_name: str, config:Config):
+    """Navigate to the mod's page on nexus. could use a search engine instead of nexus's own unreliable search"""
 
     encoded_name = urllib.parse.quote_plus(mod_name)
     url = f"https://www.nexusmods.com/games/skyrimspecialedition/mods?keyword={encoded_name}&sort=endorsements"
@@ -63,67 +74,65 @@ def find_mod_page_with_nexus(page: Page, mod_name):
     mod_page.click()
     return page
 
-
-
-global mods
-mods = [
-    "CLoaks of skyrim",
-    "Valhalla Combat",
-    "SkyUI_5_2_SE",
-    "A Mod That Doesn't Exist Hopefully" # Example of a mod that might not be found
-]
-
-# Use a standard launch instead of connect_over_cdp for simplicity
-# Set headless=False to watch the browser execution
-
-import os
-with sync_playwright() as p:
-    user_data_dir=f'{os.environ['HOME']}/.config/google-chrome/Default'
-    #browser = p.chromium.connect_over_cdp("http://localhost:9222")
-    browser = p.chromium.launch_persistent_context(
-        executable_path='/bin/google-chrome-stable',
-        user_data_dir=user_data_dir,
-        headless=False,  # See what's going on
-        args=["--start-maximized --remote-debugging-port=9222"],
-        channel="chrome",
-        no_viewport=True
-    )
-    page = browser.new_page()
-
-    for mod in mods:
-        
+def download_mods(config:Config):
+    with sync_playwright() as p:
+        user_data_dir=f'{os.environ['HOME']}/.config/google-chrome/Default'
+        #browser = p.chromium.connect_over_cdp("http://localhost:9222")
+        browser = p.chromium.launch_persistent_context(
+            executable_path='/bin/google-chrome-stable',
+            user_data_dir=user_data_dir,
+            headless=False,  # See what's going on
+            args=["--start-maximized --remote-debugging-port=9222"],
+            channel="chrome",
+            no_viewport=True
+        )
         page = browser.new_page()
 
-
-        print(f"\n--- Searching Nexus for: {mod} ---")
-
-        try:
-            nexus_link_found = False
-            mod_page = find_mod_page_with_nexus(page, mod)
-
-            requirements = []
-
-            if not mod_page:
-                err = f"ERROR: No nexusmods.com link found in search results for '{mod}'."
-                print(err)
-                raise
+        for mod in config.MODS:
+            
+            page = browser.new_page()
 
 
-            download_page = navigate_to_download(mod_page)
-            slow_download(download_page)
-            print("OK!")
+            print(f"\n--- Searching Nexus for: {mod} ---")
 
-        except TimeoutError as e:
-            print(f"Timeout error during search for '{mod}': {e}")
+            try:
+                nexus_link_found = False
+                mod_page = find_mod_page_with_nexus(page, mod,config)
 
-        except Exception as e:
-            print(f"""An unexpected error occurred during the search for '{mod}': {e}!
-                \n\nDownload the mod and or press enter to proceed""")
-            input()
+                requirements = []
 
-        time.sleep(3) # Wait for 3 seconds
-
+                if not mod_page:
+                    err = f"ERROR: No nexusmods.com link found in search results for '{mod}'."
+                    print(err)
+                    raise
 
 
-    # The browser is automatically closed when exiting the 'with' block
-    print("\n--- Script finished. ---")
+                download_page = navigate_to_download(mod_page,config)
+                slow_download(download_page,config)
+                print("OK!")
+
+            except TimeoutError as e:
+                print(f"Timeout error during search for '{mod}': {e}")
+
+            except Exception as e:
+                print(f"""An unexpected error occurred during the search for '{mod}': {e}!
+                    \n\nDownload the mod and or press enter to proceed""")
+                input()
+
+            time.sleep(3) # Wait for 3 seconds
+
+        print("\n--- Script finished. ---")
+
+
+modlist = [
+    "Valhalla combat",
+    "Cloaks of Skyrim"
+]
+config = Config(
+    IS_LOGGED_IN=True,
+    MODS=modlist,
+    DOWNLOAD_DIRECTORY='./downloads',
+    )
+
+os.system(f'mkdir -p {config.DOWNLOAD_DIRECTORY}')
+download_mods(config=config)
