@@ -5,6 +5,7 @@ import urllib.parse
 import os
 
 from pydantic import BaseModel
+from pip._vendor.urllib3.util import Url
 
 #todo use  configdict to read from .env or a config file
 class Config(BaseModel):
@@ -25,6 +26,13 @@ def navigate_to_download(page: Page, config:Config):
     time.sleep(1)  # if required by site animation/JS
     download_popup_button.click()
 
+    if ("?tab=files" in page.url and "fileid" not in page.url.lower()):
+      time.sleep(1)
+      slow_download_button = page.locator('#slowDownloadButton')
+      if not slow_download_button.is_visible():
+        print("Click ONCE on the manual download button of the main file you wish to download and press enter")
+        input()
+
     try:
         requirement_popup = page.locator('.widget-mod-requirements')
         requirement_popup.wait_for(state="visible", timeout=2000)
@@ -33,8 +41,8 @@ def navigate_to_download(page: Page, config:Config):
         download_button = requirement_popup.locator('a.btn')
         download_button.wait_for(state="attached", timeout=2000)
 
-        if not download_button.is_visible():
-            page.keyboard.press("Escape")
+        if not requirement_popup.is_visible():
+            page.keyboard.press("Esc")
             print('Could not find the download button! Trying to proceed with Esc.')
             raise Exception("Download button not visible")
 
@@ -90,10 +98,12 @@ def search_mod_page(page:Page, mod_name:str, config:Config):
       loc = page.locator('.result-link')
       loc.first.wait_for(state="attached", timeout=3000)
       loc.first.click()
+      if "https://www.nexusmods.com/skyrimspecialedition/mods/" not in page.url:
+        print("Failed search")
+        raise Exception("Failed search")
       return page.url or ''
     except Exception as err:
       print(err)
-      time.sleep(20)
 
 
 
